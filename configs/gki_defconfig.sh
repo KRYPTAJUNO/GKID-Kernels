@@ -71,6 +71,16 @@ if [ "$NH" = "true" ]; then
   apply_config "$WORKDIR/configs/nethunter.config" "$DEFCONFIG"
 fi
 
+# Optional in-tree rtl8xxxu module for the GKID RTL8188GU integration test.
+# RTL8710BU/B711 support remains in the separately pinned, B711-only donor module.
+if [ "${RTL8XXXU_IN_TREE:-false}" = "true" ]; then
+  echo "Enabling in-tree RTL8XXXU as a module"
+  cat >> "$DEFCONFIG" <<EOF
+CONFIG_WLAN_VENDOR_REALTEK=y
+CONFIG_RTL8XXXU=m
+EOF
+fi
+
 if [ "$KSU_COMPAT" != "true" ]; then
   echo "🔧 Disable useless debugging configs for performance and resources"
   cat >> $DEFCONFIG <<EOF
