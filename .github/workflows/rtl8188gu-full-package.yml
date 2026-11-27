@@ -73,8 +73,19 @@ jobs:
           chmod +x ./*.sh py/*.py
           export GIT_CLONE_PROTECTION_ACTIVE=false
           ./build.sh
+          ACTUAL_KERNEL_SOURCE="$(git -C ksrc rev-parse HEAD)"
+          echo "Expected kernel source: $EXPECTED_KERNEL_SOURCE"
+          echo "Actual kernel source:   $ACTUAL_KERNEL_SOURCE"
+          test "$ACTUAL_KERNEL_SOURCE" = "$EXPECTED_KERNEL_SOURCE"
           test -s out/arch/arm64/boot/Image
-          test -s artifacts/*.zip
+          shopt -s nullglob
+          KERNEL_ZIPS=(artifacts/*.zip)
+          if [ "${#KERNEL_ZIPS[@]}" -ne 1 ]; then
+            printf 'Expected exactly one kernel ZIP; found %s\\n' "${#KERNEL_ZIPS[@]}"
+            printf '%s\\n' "${KERNEL_ZIPS[@]}"
+            exit 1
+          fi
+          test -s "${KERNEL_ZIPS[0]}"
           grep -q 'CONFIG_KSU=y' out/.config
           grep -q 'CONFIG_KSU_SUSFS=y' out/.config
           grep -qx 'CONFIG_RTL8XXXU=m' out/.config
@@ -90,6 +101,18 @@ jobs:
           echo "KSU/SuSFS/Multiple-Managers: enabled by build.sh environment" >> artifacts/kernel-metadata-rtl8188gu.txt
           echo "AnyKernel3 package:" >> artifacts/kernel-metadata-rtl8188gu.txt
           find artifacts -maxdepth 1 -type f -name '*.zip' -printf '%f %s bytes\n' >> artifacts/kernel-metadata-rtl8188gu.txt
+
+      - name: Upload kernel-build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GKID-r663-kernel-build-failure-diagnostics
+          path: |
+            artifacts/build.log
+            artifacts/kernel-config-rtl8188gu.txt
+            artifacts/kernel-metadata-rtl8188gu.txt
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Audit and build pinned RTL8188GU driver with monitor mode
         shell: bash
