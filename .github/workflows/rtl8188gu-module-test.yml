@@ -88,7 +88,7 @@ jobs:
           } > module-test-artifacts/runner-diagnostics.txt
           exit "$BUILD_STATUS"
 
-      - name: Compile RTL8188GU external module only
+      - name: Build and verify in-tree RTL8XXXU and RTL8188GU modules
         shell: bash
         run: |
           set -euo pipefail
@@ -105,11 +105,11 @@ jobs:
           grep -qx 'CONFIG_WLAN_VENDOR_REALTEK=y' out/.config
           grep -qx 'CONFIG_RTL8XXXU=m' out/.config
           export PATH="$GITHUB_WORKSPACE/neutron-clang/bin:$PATH"
-          make -C "$GITHUB_WORKSPACE/ksrc" \\
-            O="$GITHUB_WORKSPACE/out" \\
-            ARCH=arm64 LLVM=1 LLVM_IAS=1 \\
-            CROSS_COMPILE=aarch64-linux-gnu- \\
-            CC="ccache clang" \\
+          make -C "$GITHUB_WORKSPACE/ksrc" \
+            O="$GITHUB_WORKSPACE/out" \
+            ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="ccache clang" \
             modules 2>&1 | tee module-test-artifacts/in-tree-rtl8xxxu-build.log
           IN_TREE_MODULE="out/drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu.ko"
           test -s "$IN_TREE_MODULE"
