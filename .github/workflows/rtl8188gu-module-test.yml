@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/rtl8188gu-module-test.yml"
       - "build.sh"
+      - "configs/gki_defconfig.sh"
       - "patches/0001-feat-escape-persistent_allow_list-to-kthread.patch"
       - "scripts/restrict-rtl8xxxu-usb-ids.py"
 
@@ -102,6 +103,10 @@ jobs:
 
           grep -qx 'CONFIG_MODULES=y' out/.config
           grep -qx 'CONFIG_MODVERSIONS=y' out/.config
+          grep -qx 'CONFIG_WLAN=y' out/.config
+          grep -qx 'CONFIG_CFG80211=m' out/.config
+          grep -qx 'CONFIG_MAC80211=m' out/.config
+          grep -qx 'CONFIG_USB=y' out/.config
           grep -qx 'CONFIG_WLAN_VENDOR_REALTEK=y' out/.config
           grep -qx 'CONFIG_RTL8XXXU=m' out/.config
           export PATH="$GITHUB_WORKSPACE/neutron-clang/bin:$PATH"
