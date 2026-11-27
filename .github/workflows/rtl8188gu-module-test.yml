@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/rtl8188gu-module-test.yml"
       - "build.sh"
+      - "patches/0001-feat-escape-persistent_allow_list-to-kthread.patch"
 
 permissions:
   contents: read
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   build-and-check:
     name: Build GKID 6.1.177 and test RTL8188GU module
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
 
     env:
