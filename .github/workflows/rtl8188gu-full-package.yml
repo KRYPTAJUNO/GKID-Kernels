@@ -49,6 +49,7 @@ jobs:
       RTL8XXXU_IN_TREE: "true"
       RTL8188GU_COMMIT: 9dec8292ae13c3a0dbf53eb07da6585427c8db7a
       EXPECTED_KERNEL_SOURCE: f391d5a36ae325a4f3abdf497335abae87734a05
+      KERNEL_BUILD_JOBS: "2"
 
     steps:
       - name: Checkout isolated full-package branch
@@ -143,12 +144,11 @@ jobs:
           readelf -h "$MODULE" | grep -q AArch64
           strings "$MODULE" | grep -q rtw_cfg80211_monitor_if_xmit_entry
           strings "$MODULE" | grep -q cfg80211_rtw_set_monitor_channel
+          mkdir -p modules/RTL8188GU-KSU/lkm
           cp "$MODULE" modules/RTL8188GU-KSU/lkm/8188gu.ko
 
-          CFG80211_MODULE="$(find out -name cfg80211.ko -print -quit)"
-          if [ -n "$CFG80211_MODULE" ]; then
-            cp "$CFG80211_MODULE" modules/RTL8188GU-KSU/lkm/cfg80211.ko
-          fi
+          # Package only the B711-specific driver. Never bundle a replacement
+          # cfg80211/mac80211 module that could conflict with the running Wi-Fi stack.
 
           {
             echo "Kernel release: $(make -s -C ksrc O="$GITHUB_WORKSPACE/out" kernelrelease)"
