@@ -44,6 +44,7 @@ jobs:
       RUN_NUM: -r663
       SKIP_ANYKERNEL_PACKAGE: "true"
       RTL8XXXU_COMMIT: b6411d673759740b5cf94f150937383dc2efeda6
+      RTL8XXXU_IN_TREE: "true"
       EXPECTED_KERNEL_SOURCE: f391d5a36ae325a4f3abdf497335abae87734a05
 
     steps:
@@ -101,6 +102,10 @@ jobs:
 
           grep -qx 'CONFIG_MODULES=y' out/.config
           grep -qx 'CONFIG_MODVERSIONS=y' out/.config
+          grep -qx 'CONFIG_WLAN_VENDOR_REALTEK=y' out/.config
+          grep -qx 'CONFIG_RTL8XXXU=m' out/.config
+          test -s out/drivers/net/wireless/realtek/rtl8xxxu/r8xxxu.ko
+          modinfo -F vermagic out/drivers/net/wireless/realtek/rtl8xxxu/r8xxxu.ko | grep -q '^6.1.177-GKID-r663-f391d5a36 '
 
           git clone --filter=blob:none https://github.com/lwfinger/rtl8xxxu.git "$DRIVER_DIR"
           git -C "$DRIVER_DIR" checkout --detach "$RTL8XXXU_COMMIT"
