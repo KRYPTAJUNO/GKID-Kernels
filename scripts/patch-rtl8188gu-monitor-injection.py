@@ -40,7 +40,15 @@ if "return rtw_monitor_xmit_entry(skb, ndev);" not in cfg:
     if count != 1:
         raise SystemExit("Could not replace monitor netdev TX callback safely")
 
-if "rtap_len != 12" in xmit:
+monitor_start = xmit.find("s32 rtw_monitor_xmit_entry")
+if monitor_start < 0:
+    raise SystemExit("Could not find generic monitor TX function")
+monitor_end = xmit.find("\n#endif", monitor_start)
+if monitor_end < 0:
+    raise SystemExit("Could not find end of generic monitor TX function")
+monitor_fn = xmit[monitor_start:monitor_end]
+
+if "rtap_len != 12" in monitor_fn:
     old = """	rtap_len = ieee80211_get_radiotap_len(skb->data);
 	if (unlikely(skb->len < rtap_len))
 		goto fail;
@@ -54,9 +62,9 @@ if "rtap_len != 12" in xmit:
 	if (unlikely(rtap_len < sizeof(struct ieee80211_radiotap_header) || skb->len < rtap_len))
 		goto fail;
 """
-    if old not in xmit:
-        raise SystemExit("Could not find exact radiotap length guard in core/rtw_xmit.c")
-    xmit = xmit.replace(old, new, 1)
+    if old not in monitor_fn:
+        raise SystemExit("Could not find exact radiotap length guard in generic monitor TX function")
+    monitor_fn = monitor_fn.replace(old, new, 1)
 
 # Add bounds/type validation before the generic TX path dereferences a 802.11 header.
 needle = """	skb_pull(skb, rtap_len);
@@ -81,17 +89,18 @@ guard = """	skb_pull(skb, rtap_len);
 	    ((frame_ctl & 0x0080) || ((frame_ctl & 0x0300) == 0x0300) || (frame_ctl & 0x8000)))
 		goto fail;
 """
-if guard not in xmit:
-    if needle not in xmit:
-        raise SystemExit("Could not find 802.11 header parse anchor in core/rtw_xmit.c")
-    xmit = xmit.replace(needle, guard, 1)
+if guard not in monitor_fn:
+    if needle not in monitor_fn:
+        raise SystemExit("Could not find 802.11 header parse anchor in generic monitor TX function")
+    monitor_fn = monitor_fn.replace(needle, guard, 1)
 
+xmit = xmit[:monitor_start] + monitor_fn + xmit[monitor_end:]
 cfg_path.write_text(cfg)
 xmit_path.write_text(xmit)
 
 if "return rtw_monitor_xmit_entry(skb, ndev);" not in cfg:
     raise SystemExit("Monitor callback patch verification failed")
-if "rtap_len != 12" in xmit:
+if "rtap_len != 12" in monitor_fn:
     raise SystemExit("Fixed 12-byte radiotap restriction remains")
 if "Support management frames and simple 3-address non-QoS data frames." not in xmit:
     raise SystemExit("Raw TX frame validation patch missing")
