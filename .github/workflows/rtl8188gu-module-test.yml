@@ -1,0 +1,152 @@
+name: RTL8188GU external-module compatibility test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - rtl8188gu-actions-test
+    paths:
+      - ".github/workflows/rtl8188gu-module-test.yml"
+      - "build.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rtl8188gu-module-test
+  cancel-in-progress: false
+
+jobs:
+  build-and-check:
+    name: Build GKID 6.1.177 and test RTL8188GU module
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    env:
+      KERNEL_REPO: https://github.com/KRYPTAJUNO/GKI-Duchamp-6.1
+      KERNEL_BRANCH_OVERRIDE: rtl8188gu-build-base-f391d5a36
+      KERNEL_LOCALVERSION_OVERRIDE: -GKID-r663-f391d5a36
+      KERNEL_VERSION: "6.1"
+      KSU: KSU
+      KSU_COMPAT: "false"
+      KSU_SUSFS: "true"
+      C_LTO: "true"
+      No_DS: "false"
+      TODO: kernel
+      TEST: "no"
+      LTO: fullLTO
+      CLEAN_LTO_CACHE: "true"
+      DROIDSPACES: "false"
+      NH: "true"
+      NM: "false"
+      RUN_NUM: -r663
+      SKIP_ANYKERNEL_PACKAGE: "true"
+      RTL8XXXU_COMMIT: b6411d673759740b5cf94f150937383dc2efeda6
+      EXPECTED_KERNEL_SOURCE: f391d5a36ae325a4f3abdf497335abae87734a05
+
+    steps:
+      - name: Checkout isolated builder branch
+        uses: actions/checkout@v4
+        with:
+          ref: rtl8188gu-actions-test
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex libdw-dev libelf-dev libssl-dev libncurses-dev \
+            ccache gh dwarves cpio zip unzip zstd kmod binutils-aarch64-linux-gnu \
+            gcc-aarch64-linux-gnu
+          python3 -m pip install lxml
+
+      - name: Build the matching GKID kernel tree on the disposable runner
+        run: |
+          set -euo pipefail
+          mkdir -p module-test-artifacts
+          chmod +x ./*.sh py/*.py
+          ./build.sh
+
+      - name: Compile RTL8188GU external module only
+        shell: bash
+        run: |
+          set -euo pipefail
+          DRIVER_DIR="$GITHUB_WORKSPACE/rtl8xxxu-src"
+          mkdir -p module-test-artifacts
+
+          test "$(git -C ksrc rev-parse HEAD)" = "$EXPECTED_KERNEL_SOURCE"
+          test -s out/.config
+          test -s out/Module.symvers
+          test -s out/include/config/auto.conf
+
+          grep -qx 'CONFIG_MODULES=y' out/.config
+          grep -qx 'CONFIG_MODVERSIONS=y' out/.config
+
+          git clone --filter=blob:none https://github.com/lwfinger/rtl8xxxu.git "$DRIVER_DIR"
+          git -C "$DRIVER_DIR" checkout --detach "$RTL8XXXU_COMMIT"
+          test "$(git -C "$DRIVER_DIR" rev-parse HEAD)" = "$RTL8XXXU_COMMIT"
+
+          export PATH="$GITHUB_WORKSPACE/neutron-clang/bin:$PATH"
+          make -C "$GITHUB_WORKSPACE/ksrc" \
+            O="$GITHUB_WORKSPACE/out" \
+            M="$DRIVER_DIR" \
+            ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC="ccache clang" \
+            modules 2>&1 | tee module-test-artifacts/module-build.log
+
+          MODULE="$DRIVER_DIR/rtl8xxxu_git.ko"
+          test -s "$MODULE"
+
+          KERNEL_RELEASE="$(make -s -C ksrc O="$GITHUB_WORKSPACE/out" kernelrelease)"
+          MODULE_VERMAGIC="$(modinfo -F vermagic "$MODULE")"
+          MODULE_RELEASE="${MODULE_VERMAGIC%% *}"
+          test "$MODULE_RELEASE" = "$KERNEL_RELEASE"
+
+          modinfo -F alias "$MODULE" | grep -Eiq 'usb:v0BDApB711'
+          readelf -h "$MODULE" | grep -q 'AArch64'
+
+          python3 - <<'PY'
+          import pathlib, re, subprocess, sys
+          target = re.compile(r"usb:v0BDApB711", re.I)
+          collisions = []
+          for module in pathlib.Path("out").rglob("*.ko"):
+              result = subprocess.run(
+                  ["modinfo", "-F", "alias", str(module)],
+                  text=True, capture_output=True, check=False
+              )
+              if any(target.search(line) for line in result.stdout.splitlines()):
+                  collisions.append(str(module))
+          if collisions:
+              print("USB ID collision in existing kernel modules:", *collisions, sep="\\n")
+              sys.exit(1)
+          print("No existing kernel-module alias collision for USB ID 0bda:b711.")
+          PY
+
+          {
+            echo "Kernel release: $KERNEL_RELEASE"
+            echo "Module vermagic: $MODULE_VERMAGIC"
+            echo "Driver commit: $RTL8XXXU_COMMIT"
+            echo "Kernel source commit: $(git -C ksrc rev-parse HEAD)"
+            echo "USB aliases:"
+            modinfo -F alias "$MODULE"
+            echo "Firmware declarations:"
+            modinfo -F firmware "$MODULE"
+            echo "Dependencies:"
+            modinfo -F depends "$MODULE"
+          } | tee module-test-artifacts/module-metadata.txt
+
+          cp "$MODULE" module-test-artifacts/
+          cp out/.config module-test-artifacts/kernel-config.txt
+          cp artifacts/build.log module-test-artifacts/kernel-build.log
+
+      - name: Upload compile-only test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtl8188gu-gkid-6.1.177-compile-test
+          path: |
+            module-test-artifacts/
+            artifacts/build.log
+          if-no-files-found: warn
+          retention-days: 14
