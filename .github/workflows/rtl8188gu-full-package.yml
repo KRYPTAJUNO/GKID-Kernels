@@ -12,13 +12,14 @@ on:
       - "configs/**"
       - "patches/**"
       - "scripts/audit-rtl8188gu-source.py"
+      - "scripts/patch-rtl8188gu-monitor-injection.py"
       - "modules/RTL8188GU-KSU/**"
 
 permissions:
   contents: read
 
 concurrency:
-  group: rtl8188gu-full-package
+  group: rtl8188gu-full-package-monitor-injection
   cancel-in-progress: true
 
 jobs:
@@ -98,6 +99,7 @@ jobs:
           git clone --filter=blob:none https://github.com/lwfinger/rtl8188gu.git "$DRIVER_DIR"
           git -C "$DRIVER_DIR" checkout --detach "$RTL8188GU_COMMIT"
           test "$(git -C "$DRIVER_DIR" rev-parse HEAD)" = "$RTL8188GU_COMMIT"
+          python3 scripts/patch-rtl8188gu-monitor-injection.py "$DRIVER_DIR" | tee artifacts/rtl8188gu-monitor-injection-patch.txt
           python3 scripts/audit-rtl8188gu-source.py "$DRIVER_DIR" | tee artifacts/rtl8188gu-source-audit.txt
 
           export PATH="$GITHUB_WORKSPACE/neutron-clang/bin:$PATH"
@@ -134,7 +136,7 @@ jobs:
             echo "Dependencies: $(modinfo -F depends "$MODULE")"
             echo "Firmware: embedded in driver source (LOAD_FW_HEADER_FROM_DRIVER)"
             echo "Monitor interface: source audit + compiled monitor TX/channel symbols present"
-            echo "Packet injection: raw radiotap TX code path present; hardware runtime test still required"
+            echo "Packet injection: patched TX path supports management frames and simple 3-address non-QoS data; QoS/WDS/control injection unsupported; hardware runtime test still required"
             echo "Existing modules unloaded/replaced by installer: none"
           } | tee artifacts/rtl8188gu-module-metadata.txt
 
