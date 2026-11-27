@@ -1,4 +1,4 @@
-name: RTL8188GU external-module compatibility test
+name: RTL8188GU in-tree and B711 module compatibility test
 
 on:
   workflow_dispatch:
@@ -116,6 +116,7 @@ jobs:
             ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="ccache clang" \
+            M=drivers/net/wireless/realtek/rtl8xxxu \
             modules 2>&1 | tee module-test-artifacts/in-tree-rtl8xxxu-build.log
           IN_TREE_MODULE="out/drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu.ko"
           test -s "$IN_TREE_MODULE"
