@@ -469,6 +469,7 @@ set +eo pipefail
 
 cd $WORKDIR
 
+if [ "${SKIP_ANYKERNEL_PACKAGE:-false}" != "true" ]; then
 log "Cloning anykernel from $(simplify_gh_url "$ANYKERNEL_REPO")"
 git clone -q --depth=1 $ANYKERNEL_REPO anykernel
 
@@ -491,3 +492,4 @@ cd $OLDPWD
 echo "BASE_NAME=$KERNEL_NAME-$VARIANT" >> $GITHUB_ENV
 mkdir -p $RELEASE_DIR
 mv $WORKDIR/*.zip $RELEASE_DIR
+fi
