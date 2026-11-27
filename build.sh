@@ -38,6 +38,9 @@ else
   IFS='|' read -r KERNEL_REPO KERNEL_BRANCH KERNEL_KMI <<< "$(resolve_kernel_source "$KERNEL_VERSION")"
 fi
 
+# Optional source branch override for isolated GitHub Actions experiments.
+KERNEL_BRANCH="${KERNEL_BRANCH_OVERRIDE:-$KERNEL_BRANCH}"
+
 ANDROID_RELEASE="$(android_release_for_version "$KERNEL_VERSION")"
 echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
 echo "ANDROID_RELEASE=$ANDROID_RELEASE" >> $GITHUB_ENV
