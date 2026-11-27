@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: rtl8188gu-full-package
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -58,12 +58,12 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          timeout 5m sudo apt-get update -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=1
+          timeout 10m sudo apt-get install -y \
             bc bison flex libdw-dev libelf-dev libssl-dev libncurses-dev \
             ccache gh dwarves cpio zip unzip zstd kmod binutils-aarch64-linux-gnu \
             gcc-aarch64-linux-gnu python3
-          python3 -m pip install lxml
+          timeout 5m python3 -m pip install lxml
 
       - name: Build complete GKID KernelSU + SuSFS + Multiple Managers kernel ZIP
         shell: bash
