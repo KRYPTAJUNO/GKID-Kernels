@@ -104,8 +104,18 @@ jobs:
           grep -qx 'CONFIG_MODVERSIONS=y' out/.config
           grep -qx 'CONFIG_WLAN_VENDOR_REALTEK=y' out/.config
           grep -qx 'CONFIG_RTL8XXXU=m' out/.config
-          test -s out/drivers/net/wireless/realtek/rtl8xxxu/r8xxxu.ko
-          modinfo -F vermagic out/drivers/net/wireless/realtek/rtl8xxxu/r8xxxu.ko | grep -q '^6.1.177-GKID-r663-f391d5a36 '
+          export PATH="$GITHUB_WORKSPACE/neutron-clang/bin:$PATH"
+          make -C "$GITHUB_WORKSPACE/ksrc" \\
+            O="$GITHUB_WORKSPACE/out" \\
+            M=drivers/net/wireless/realtek/rtl8xxxu \\
+            ARCH=arm64 LLVM=1 LLVM_IAS=1 \\
+            CROSS_COMPILE=aarch64-linux-gnu- \\
+            CC="ccache clang" \\
+            modules 2>&1 | tee module-test-artifacts/in-tree-rtl8xxxu-build.log
+          IN_TREE_MODULE="out/drivers/net/wireless/realtek/rtl8xxxu/rtl8xxxu.ko"
+          test -s "$IN_TREE_MODULE"
+          modinfo -F vermagic "$IN_TREE_MODULE" | grep -q '^6.1.177-GKID-r663-f391d5a36 '
+          cp "$IN_TREE_MODULE" module-test-artifacts/
 
           git clone --filter=blob:none https://github.com/lwfinger/rtl8xxxu.git "$DRIVER_DIR"
           git -C "$DRIVER_DIR" checkout --detach "$RTL8XXXU_COMMIT"
