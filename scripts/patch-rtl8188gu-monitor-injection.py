@@ -58,7 +58,11 @@ if "rtap_len != 12" in monitor_fn:
 		goto fail;
 	}
 """
-    new = """	rtap_len = ieee80211_get_radiotap_len(skb->data);
+    new = """	/* Validate fixed radiotap header before parsing its length. */
+	if (unlikely(skb->len < sizeof(struct ieee80211_radiotap_header)))
+		goto fail;
+
+	rtap_len = ieee80211_get_radiotap_len(skb->data);
 	if (unlikely(rtap_len < sizeof(struct ieee80211_radiotap_header) || skb->len < rtap_len))
 		goto fail;
 """
