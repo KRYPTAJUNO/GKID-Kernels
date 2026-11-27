@@ -298,13 +298,25 @@ export KCFLAGS="-w"
 
 LINK_CACHE_PATH="/dev/shm/thinlto-cache"
 LINKER_SHIM="/tmp/clang-lto-linker"
+# Bound parallelism for memory-intensive full-LTO GKI builds.
+ONLINE_CPUS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc)"
+KERNEL_BUILD_JOBS="${KERNEL_BUILD_JOBS:-2}"
+if ! [[ "$KERNEL_BUILD_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+  error "KERNEL_BUILD_JOBS must be a positive integer"
+  exit 1
+fi
+if (( KERNEL_BUILD_JOBS > ONLINE_CPUS )); then
+  warning "Requested $KERNEL_BUILD_JOBS jobs exceeds $ONLINE_CPUS online CPUs; capping"
+  KERNEL_BUILD_JOBS="$ONLINE_CPUS"
+fi
+info "Kernel build parallelism: $KERNEL_BUILD_JOBS jobs / $ONLINE_CPUS CPUs"
 MAKE_ARGS=(
   LLVM=1
   LLVM_IAS=1
   ARCH=arm64
   CROSS_COMPILE=aarch64-linux-gnu-
   CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
-  -j$(nproc --all)
+  -j${KERNEL_BUILD_JOBS}
   O="$OUTDIR"
 )
 
@@ -365,101 +377,15 @@ if [[ $TODO == "defconfig" ]]; then
   exit 0
 fi
 
-echo "::group::[*] Aggressive Resource Optimization for FullLTO"
-
-info "Initial storage: $(df -h / | awk 'NR==2 {print $4}') available"
-info "Initial memory: $(free -h | awk '/^Mem:/ {print $7}') available"
-
-sudo apt-get clean -qq
-sudo apt-get autoremove -y -qq
-sudo apt-get autoclean -qq
-sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /var/cache/apt/*
-
-for dir in \
-    /usr/share/dotnet \
-    /usr/local/lib/android \
-    /usr/local/share/powershell \
-    /usr/local/share/chromium \
-    /usr/local/lib/node_modules \
-    /opt/ghc \
-    /usr/local/.ghcup \
-    /opt/hostedtoolcache \
-    /usr/local/share/boost \
-    /usr/local/share/gradle-* \
-    /usr/local/share/kotlin \
-    /usr/local/share/sbt \
-    /usr/share/swift \
-    /usr/local/share/php \
-    /usr/local/share/rust \
-    /usr/local/share/go \
-    /usr/local/julia* \
-    /usr/share/az_* \
-    /usr/share/miniconda \
-    /opt/microsoft \
-    /opt/google \
-    /opt/az \
-    /usr/lib/jvm \
-    /usr/local/lib/heroku \
-    /var/lib/containers \
-    /var/lib/docker \
-    /var/lib/gems \
-    /var/lib/mysql \
-    /var/lib/postgresql \
-    /var/lib/snapd \
-    /var/cache/* \
-    /tmp/* \
-    /home/runner/.cargo \
-    /home/runner/.rustup \
-    /home/runner/.npm \
-    /home/runner/.cache \
-    /home/runner/go \
-    /home/runner/.local/share \
-    /home/runner/.dotnet \
-    /home/runner/.gradle \
-    /home/runner/.m2 \
-    /etc/skel \
-    /home/packer \
-    /opt/pipx; do
-    if [ -e "$dir" ]; then
-        SIZE=$(du -sh "$dir" 2>/dev/null | cut -f1 || echo "?")
-        sudo rm -rf "$dir" 2>/dev/null || true
-        success "Removed $dir ($SIZE)"
-    fi
-done
-
-sudo docker system prune -af --volumes 2>/dev/null || true
-sudo docker builder prune -af 2>/dev/null || true
-sudo docker image prune -af 2>/dev/null || true
-
-sudo journalctl --vacuum-size=1M 2>/dev/null || true
-sudo find /var/log -type f \( -name "*.log" -o -name "*.gz" -o -name "*.1" -o -name "*.old" \) -delete 2>/dev/null || true
-sudo rm -rf /var/log/journal/* 2>/dev/null || true
-
-if [ -f /swapfile ]; then
-    sudo swapoff /swapfile 2>/dev/null || true
-    sudo rm -f /swapfile
-fi
-if [ -f /mnt/swapfile ]; then
-    sudo swapoff /mnt/swapfile 2>/dev/null || true
-    sudo rm -f /mnt/swapfile
-fi
-
-warning "Creating 32GB swap"
-sudo fallocate -l 32G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=32768 status=none
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-success "32GB swap created and activated"
-
-sudo sysctl -w vm.swappiness=90
-sudo sysctl -w vm.vfs_cache_pressure=200
-sudo sysctl -w vm.dirty_ratio=5
-sudo sysctl -w vm.dirty_background_ratio=2
-sudo sysctl -w vm.drop_caches=3
-sudo sysctl -w vm.overcommit_memory=1
-
-success "Final storage: $(df -h / | awk 'NR==2 {print $4}') available"
-success "Final memory:  $(free -h | awk '/^Mem:/ {print $7}') available | Swap: $(free -h | awk '/^Swap:/ {print $2}')"
+echo "::group::[*] Safe Resource Check for FullLTO"
+info "Runner storage before build: $(df -h "$WORKDIR" | awk 'NR==2 {print $4 " available of " $2}')"
+info "Runner memory before build: $(free -h | awk '/^Mem:/ {print $7 " available of " $2}')"
+info "Runner swap before build: $(free -h | awk '/^Swap:/ {print $2 " total, " $4 " free}')"
+info "Kernel build parallelism: $KERNEL_BUILD_JOBS"
+# Do not delete hosted-runner toolchains, caches, /tmp contents, or create
+# oversized swap files. Those actions can exhaust disk or break later steps.
+sudo apt-get clean -qq || true
+ccache --show-stats || true
 echo "::endgroup::"
 
 set -eo pipefail
