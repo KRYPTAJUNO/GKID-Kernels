@@ -14,7 +14,7 @@ autoconf = (root / "include/autoconf.h").read_text(errors="replace")
 
 checks = {
     "B711 USB ID present": bool(re.search(
-        r"USB_DEVICE_AND_INTERFACE_INFO\\s*\\(\\s*USB_VENDER_ID_REALTEK\\s*,\\s*0xB711\\s*,\\s*0xff\\s*,\\s*0xff\\s*,\\s*0xff",
+        r"USB_DEVICE_AND_INTERFACE_INFO\s*\(\s*USB_VENDER_ID_REALTEK\s*,\s*0xB711\s*,\s*0xff\s*,\s*0xff\s*,\s*0xff",
         usb, re.I)),
     "monitor interface advertised": "NL80211_IFTYPE_MONITOR" in cfg,
     "monitor channel callback": "cfg80211_rtw_set_monitor_channel" in cfg and ".set_monitor_channel" in cfg,
