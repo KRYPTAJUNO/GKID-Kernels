@@ -62,11 +62,29 @@ jobs:
           python3 -m pip install lxml
 
       - name: Build the matching GKID kernel tree on the disposable runner
+        shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p module-test-artifacts
           chmod +x ./*.sh py/*.py
+          set +e
           ./build.sh
+          BUILD_STATUS=$?
+          set -e
+          if [ -s artifacts/build.log ]; then
+            cp artifacts/build.log module-test-artifacts/kernel-build.log
+          else
+            printf 'build.sh exited with status %s; artifacts/build.log was not created.\n' "$BUILD_STATUS" > module-test-artifacts/kernel-build.log
+          fi
+          {
+            echo "Build exit status: $BUILD_STATUS"
+            echo "Runner: $(uname -a)"
+            echo "Disk space:"
+            df -h
+            echo "Memory:"
+            free -h
+          } > module-test-artifacts/runner-diagnostics.txt
+          exit "$BUILD_STATUS"
 
       - name: Compile RTL8188GU external module only
         shell: bash
