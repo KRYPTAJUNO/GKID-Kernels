@@ -37,7 +37,7 @@ index c1f27f0..b458d22 100644
  {
      u32 magic = FILE_MAGIC;
      u32 version = FILE_FORMAT_VERSION;
-@@ -430,48 +431,41 @@ static void do_persistent_allow_list(struct callback_head *_cb)
+@@ -430,46 +431,40 @@ static void do_persistent_allow_list(struct callback_head *_cb)
          goto close_file;
      }
  
