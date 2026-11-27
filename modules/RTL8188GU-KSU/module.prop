@@ -1,0 +1,6 @@
+id=rtl8188gu_gkid
+name=RTL8188GU (RTL8710BU) Driver
+version=0.1.0-gkid-r663
+versionCode=1
+author=GKID RTL8188GU integration
+description=Additive B711-only RTL8188GU USB driver with monitor-mode support for GKID 6.1.177. Does not unload or replace existing Wi-Fi drivers.
