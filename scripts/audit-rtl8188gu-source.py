@@ -20,6 +20,7 @@ checks = {
     "monitor channel callback": "cfg80211_rtw_set_monitor_channel" in cfg and ".set_monitor_channel" in cfg,
     "monitor netdev routed to generic raw TX": "return rtw_monitor_xmit_entry(skb, ndev);" in cfg,
     "generic TX accepts variable radiotap lengths": "rtap_len != 12" not in core_xmit,
+    "radiotap header length checked before parsing": "skb->len < sizeof(struct ieee80211_radiotap_header)" in core_xmit,
     "generic TX supports management and safe data frame path": "Support management frames and simple 3-address non-QoS data frames." in core_xmit,
     "monitor transmit dispatch": "rtw_monitor_xmit_entry" in xmit,
     "monitor mode build switch": "CONFIG_WIFI_MONITOR" in make,
