@@ -9,6 +9,7 @@ on:
       - ".github/workflows/rtl8188gu-module-test.yml"
       - "build.sh"
       - "patches/0001-feat-escape-persistent_allow_list-to-kthread.patch"
+      - "scripts/restrict-rtl8xxxu-usb-ids.py"
 
 permissions:
   contents: read
@@ -104,6 +105,7 @@ jobs:
           git clone --filter=blob:none https://github.com/lwfinger/rtl8xxxu.git "$DRIVER_DIR"
           git -C "$DRIVER_DIR" checkout --detach "$RTL8XXXU_COMMIT"
           test "$(git -C "$DRIVER_DIR" rev-parse HEAD)" = "$RTL8XXXU_COMMIT"
+          python3 scripts/restrict-rtl8xxxu-usb-ids.py
 
           export PATH="$GITHUB_WORKSPACE/neutron-clang/bin:$PATH"
           make -C "$GITHUB_WORKSPACE/ksrc" \
@@ -122,7 +124,8 @@ jobs:
           MODULE_RELEASE="${MODULE_VERMAGIC%% *}"
           test "$MODULE_RELEASE" = "$KERNEL_RELEASE"
 
-          modinfo -F alias "$MODULE" | grep -Eiq 'usb:v0BDApB711'
+          modinfo -F alias "$MODULE" | grep -Eiq '^usb:v0BDApB711'
+          test "$(modinfo -F alias "$MODULE" | wc -l)" -eq 1
           readelf -h "$MODULE" | grep -q 'AArch64'
 
           python3 - <<'PY'
@@ -142,6 +145,14 @@ jobs:
           print("No existing kernel-module alias collision for USB ID 0bda:b711.")
           PY
 
+          test -s "$DRIVER_DIR/firmware/rtl8710bufw_SMIC.bin"
+          test -s "$DRIVER_DIR/firmware/rtl8710bufw_UMC.bin"
+          test -s "$DRIVER_DIR/firmware/LICENCE.rtlwifi_firmware.txt"
+          mkdir -p module-test-artifacts/firmware/rtlwifi
+          cp "$DRIVER_DIR/firmware/rtl8710bufw_SMIC.bin" "$DRIVER_DIR/firmware/rtl8710bufw_UMC.bin" module-test-artifacts/firmware/rtlwifi/
+          cp "$DRIVER_DIR/firmware/LICENCE.rtlwifi_firmware.txt" module-test-artifacts/firmware/
+          sha256sum module-test-artifacts/firmware/rtlwifi/* module-test-artifacts/firmware/LICENCE.rtlwifi_firmware.txt > module-test-artifacts/firmware/SHA256SUMS
+
           {
             echo "Kernel release: $KERNEL_RELEASE"
             echo "Module vermagic: $MODULE_VERMAGIC"
@@ -149,6 +160,7 @@ jobs:
             echo "Kernel source commit: $(git -C ksrc rev-parse HEAD)"
             echo "USB aliases:"
             modinfo -F alias "$MODULE"
+            echo "USB alias count: $(modinfo -F alias "$MODULE" | wc -l)"
             echo "Firmware declarations:"
             modinfo -F firmware "$MODULE"
             echo "Dependencies:"
