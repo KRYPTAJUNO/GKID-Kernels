@@ -1,10 +1,11 @@
-name: GKID 6.1.177 RTL8188GU full package
+name: GKID 6.1.177 RTL8188GU standalone module build
 
 on:
   workflow_dispatch:
   push:
     branches:
       - rtl8188gu-full-package
+      - recovery/rtl8188gu-build-diagnostics
     paths:
       - ".github/workflows/rtl8188gu-full-package.yml"
       - "build.sh"
@@ -19,12 +20,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: rtl8188gu-full-package-monitor-injection
-  cancel-in-progress: true
+  group: rtl8188gu-module-only-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: Build full GKID kernel and B711 driver package
+    name: Build exact r663 ABI tree and standalone B711 module
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     env:
@@ -45,17 +46,18 @@ jobs:
       NH: "true"
       NM: "false"
       RUN_NUM: -r663-rtl8188gu
-      SKIP_ANYKERNEL_PACKAGE: "false"
+      SKIP_ANYKERNEL_PACKAGE: "true"
       RTL8XXXU_IN_TREE: "true"
       RTL8188GU_COMMIT: 9dec8292ae13c3a0dbf53eb07da6585427c8db7a
       EXPECTED_KERNEL_SOURCE: f391d5a36ae325a4f3abdf497335abae87734a05
       KERNEL_BUILD_JOBS: "2"
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout isolated full-package branch
         uses: actions/checkout@v4
         with:
-          ref: rtl8188gu-full-package
+          ref: ${{ github.ref }}
           fetch-depth: 1
 
       - name: Install build dependencies
@@ -67,26 +69,25 @@ jobs:
             gcc-aarch64-linux-gnu python3
           timeout 5m python3 -m pip install lxml
 
-      - name: Build complete GKID KernelSU + SuSFS + Multiple Managers kernel ZIP
+      - name: Build matching GKID r663 kernel tree for ABI metadata only (no kernel ZIP)
+        id: kernel_build
         shell: bash
         run: |
           set -euo pipefail
           chmod +x ./*.sh py/*.py
           export GIT_CLONE_PROTECTION_ACTIVE=false
-          ./build.sh
+          mkdir -p artifacts
+          ./build.sh 2>&1 | tee artifacts/build.log
           ACTUAL_KERNEL_SOURCE="$(git -C ksrc rev-parse HEAD)"
           echo "Expected kernel source: $EXPECTED_KERNEL_SOURCE"
           echo "Actual kernel source:   $ACTUAL_KERNEL_SOURCE"
           test "$ACTUAL_KERNEL_SOURCE" = "$EXPECTED_KERNEL_SOURCE"
           test -s out/arch/arm64/boot/Image
-          shopt -s nullglob
-          KERNEL_ZIPS=(artifacts/*.zip)
-          if [ "${#KERNEL_ZIPS[@]}" -ne 1 ]; then
-            printf 'Expected exactly one kernel ZIP; found %s\\n' "${#KERNEL_ZIPS[@]}"
-            printf '%s\\n' "${KERNEL_ZIPS[@]}"
+          if find artifacts -maxdepth 1 -type f -name '*.zip' -print -quit | grep -q .; then
+            echo "Refusing to keep or publish a kernel ZIP in this module-only workflow"
+            find artifacts -maxdepth 1 -type f -name '*.zip' -print
             exit 1
           fi
-          test -s "${KERNEL_ZIPS[0]}"
           grep -q 'CONFIG_KSU=y' out/.config
           grep -q 'CONFIG_KSU_SUSFS=y' out/.config
           grep -qx 'CONFIG_RTL8XXXU=m' out/.config
@@ -103,14 +104,49 @@ jobs:
           echo "AnyKernel3 package:" >> artifacts/kernel-metadata-rtl8188gu.txt
           find artifacts -maxdepth 1 -type f -name '*.zip' -printf '%f %s bytes\n' >> artifacts/kernel-metadata-rtl8188gu.txt
 
-      - name: Upload kernel-build diagnostics on failure
-        if: failure()
+      - name: Capture kernel-build diagnostics
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          mkdir -p artifacts
+          {
+            echo "Build step outcome: ${{ steps.kernel_build.outcome }}"
+            echo "Workflow ref: $GITHUB_REF"
+            echo "Commit: $GITHUB_SHA"
+            echo "Timestamp UTC: $(date -u +%FT%TZ)"
+            echo
+            echo "=== Disk ==="
+            df -h
+            echo
+            echo "=== Memory ==="
+            free -h
+            echo
+            echo "=== CPU ==="
+            getconf _NPROCESSORS_ONLN
+            echo
+            echo "=== Workspace usage ==="
+            du -sh "$GITHUB_WORKSPACE"/* 2>/dev/null | sort -h | tail -30
+            echo
+            echo "=== Relevant files ==="
+            find artifacts out -maxdepth 3 -type f \( -name 'build.log' -o -name '.config' -o -name 'Module.symvers' -o -name 'Image' \) -printf '%p %s bytes\\n' 2>/dev/null
+          } > artifacts/runner-diagnostics.txt
+          test -s artifacts/build.log || echo "build.log was not created" > artifacts/build-log-missing.txt
+          if [ -f out/.config ]; then cp out/.config artifacts/kernel-config-rtl8188gu.txt; fi
+          if [ -f out/Module.symvers ]; then cp out/Module.symvers artifacts/Module.symvers; fi
+          exit 0
+
+      - name: Upload kernel-build diagnostics
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: GKID-r663-kernel-build-failure-diagnostics
+          name: GKID-r663-kernel-build-diagnostics
           path: |
             artifacts/build.log
+            artifacts/runner-diagnostics.txt
+            artifacts/build-log-missing.txt
             artifacts/kernel-config-rtl8188gu.txt
+            artifacts/Module.symvers
             artifacts/kernel-metadata-rtl8188gu.txt
           if-no-files-found: warn
           retention-days: 14
@@ -171,10 +207,21 @@ jobs:
           sha256sum *.zip > SHA256SUMS
           md5sum *.zip > MD5SUMS
 
-      - name: Upload full kernel and driver packages
+      - name: Upload standalone B711 KernelSU module and ABI evidence
         uses: actions/upload-artifact@v4
         with:
-          name: GKID-r663-RTL8188GU-full-package
-          path: artifacts/
+          name: GKID-r663-RTL8188GU-standalone-module
+          path: |
+            artifacts/RTL8188GU-KSU-6.1.177-GKID-r663.zip
+            artifacts/SHA256SUMS
+            artifacts/MD5SUMS
+            artifacts/kernel-config-rtl8188gu.txt
+            artifacts/Module.symvers
+            artifacts/kernel-metadata-rtl8188gu.txt
+            artifacts/rtl8188gu-module-metadata.txt
+            artifacts/rtl8188gu-source-audit.txt
+            artifacts/rtl8188gu-monitor-injection-patch.txt
+            artifacts/rtl8188gu-module-build.log
+            artifacts/build.log
           if-no-files-found: error
           retention-days: 14
