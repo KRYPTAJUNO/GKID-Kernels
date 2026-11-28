@@ -107,7 +107,16 @@ jobs:
               'echo "[+] Pinned KernelSU repository cloned."'
           )
 
-          replace_once(
+          def replace_all(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              count = s.count(old)
+              if count < 1:
+                  raise SystemExit(f"{path}: expected at least one occurrence, found {count}: {old[:120]!r}")
+              p.write_text(s.replace(old, new))
+              print(f"{path}: replaced {count} occurrences of {old[:80]!r}")
+
+          replace_all(
               "build.sh",
               'https://github.com/WildKernels/kernel_patches/raw/main/',
               'https://github.com/WildKernels/kernel_patches/raw/$WILDKERNELS_PATCH_COMMIT/'
