@@ -176,11 +176,11 @@ jobs:
           make -C "$GITHUB_WORKSPACE/ksrc" \
             O="$GITHUB_WORKSPACE/out" \
             M="$DRIVER_DIR" \
+            TopDIR="$DRIVER_DIR" \
             ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CC="ccache clang" \
-            CONFIG_RTL8710B=y CONFIG_RTL8710BU=m CONFIG_USB_HCI=y \
-            CONFIG_WIFI_MONITOR=y modules 2>&1 | tee artifacts/rtl8188gu-module-build.log
+            CONFIG_RTL8710BU=m CONFIG_WIFI_MONITOR=y modules 2>&1 | tee artifacts/rtl8188gu-module-build.log
 
           MODULE="$DRIVER_DIR/8188gu.ko"
           test -s "$MODULE"
@@ -188,6 +188,41 @@ jobs:
           modinfo -F alias "$MODULE" | grep -Eiq '^usb:v0BDApB711'
           test "$(modinfo -F alias "$MODULE" | wc -l)" -eq 1
           readelf -h "$MODULE" | grep -q AArch64
+
+          # Verify every imported symbol CRC against the exact kernel build's
+          # Module.symvers; vermagic alone does not prove MODVERSIONS ABI match.
+          modprobe --dump-modversions "$MODULE" > artifacts/rtl8188gu-imported-symbol-crcs.txt
+          python3 - "$GITHUB_WORKSPACE/out/Module.symvers" artifacts/rtl8188gu-imported-symbol-crcs.txt <<'PY'
+          import sys
+          from pathlib import Path
+
+          symvers = {}
+          for line in Path(sys.argv[1]).read_text().splitlines():
+              fields = line.split()
+              if len(fields) >= 2:
+                  symvers[fields[1]] = fields[0].lower()
+
+          imports = []
+          for line in Path(sys.argv[2]).read_text().splitlines():
+              fields = line.split()
+              if len(fields) >= 2:
+                  imports.append((fields[1], fields[0].lower()))
+
+          if not imports:
+              raise SystemExit("FAIL: module has no MODVERSIONS import records")
+          errors = []
+          for symbol, crc in imports:
+              expected = symvers.get(symbol)
+              if expected is None:
+                  errors.append(f"{symbol}: missing from exact kernel Module.symvers")
+              elif expected != crc:
+                  errors.append(f"{symbol}: module={crc}, kernel={expected}")
+          if errors:
+              print("\\n".join(errors))
+              raise SystemExit(f"FAIL: {len(errors)} symbol CRC mismatch(es)")
+          print(f"PASS: all {len(imports)} imported symbol CRCs match exact kernel Module.symvers")
+          PY
+
           strings "$MODULE" | grep -q rtw_cfg80211_monitor_if_xmit_entry
           strings "$MODULE" | grep -q cfg80211_rtw_set_monitor_channel
           mkdir -p modules/RTL8188GU-KSU/lkm
