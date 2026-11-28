@@ -51,6 +51,7 @@ jobs:
       RTL8188GU_COMMIT: 9dec8292ae13c3a0dbf53eb07da6585427c8db7a
       EXPECTED_KERNEL_SOURCE: f391d5a36ae325a4f3abdf497335abae87734a05
       KERNEL_BUILD_JOBS: "2"
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout isolated full-package branch
