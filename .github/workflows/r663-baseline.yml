@@ -1,0 +1,185 @@
+name: GKID r663 baseline reproduction (artifact only)
+
+on:
+  push:
+    branches:
+      - baseline/r663-reproduction
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r663-baseline-reproduction
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    name: Rebuild r663 baseline and export ABI data
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+      KERNEL_REPO: https://github.com/ahmed-alnassif/GKI-Duchamp-6.1
+      KERNEL_VERSION: "6.1"
+      KERNEL_SOURCE_COMMIT: f391d5a36ae325a4f3abdf497335abae87734a05
+      KSU_COMMIT: 75e179d378d7aaa0de8946358a3384444c3e36b0
+      SUSFS_COMMIT: 27e0a0e42745991ba09d6f96a97bf4b83f41a012
+      ANTMAN_COMMIT: 0b32c45e3ad83a953b4bc3fd2feb4ad3cc87c1e8
+      CLANG_TAG: "06092026"
+      CLANG_ARCHIVE_SHA256: 531083928c8e37f6b31e324dbfd0b5a8323f989b1c57ff2c1368b889b5b1bd30
+      WILDKERNELS_PATCH_COMMIT: 159a8f3b93af582b07d0d44bfa7d08b96d667ec0
+      BASEBAND_GUARD_COMMIT: a54e0dc6cf0aff4dd87fec49644a02d2eb612905
+      KSU: KSU
+      KSU_COMPAT: "false"
+      KSU_SUSFS: "true"
+      C_LTO: "false"
+      No_DS: "false"
+      TODO: kernel
+      TEST: "no"
+      LTO: fullLTO
+      CLEAN_LTO_CACHE: "true"
+      DROIDSPACES: "true"
+      NH: "true"
+      NM: "false"
+      BUILD_NAME: 6.1-KSU+SUSFS
+      RUN_NUM: -r663
+
+    steps:
+      - name: Checkout isolated baseline branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache cpio flex git gh \
+            libdw-dev libelf-dev libssl-dev lz4 python3 python3-pip \
+            rsync unzip wget zip zlib1g-dev cmake
+          python3 -m pip install --break-system-packages lxml
+
+      - name: Pin the historical build inputs and make the script artifact-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one occurrence, found {count}: {old[:120]!r}")
+              p.write_text(s.replace(old, new, 1))
+
+          replace_once(
+              "build.sh",
+              'git clone -q --depth=1 --recurse-submodules "$KERNEL_REPO" -b "$KERNEL_BRANCH" "$KSRC"',
+              'git clone -q --depth=1 "$KERNEL_REPO" -b "$KERNEL_BRANCH" "$KSRC"\n'
+              '  git -C "$KSRC" fetch --depth=1 origin "$KERNEL_SOURCE_COMMIT"\n'
+              '  git -C "$KSRC" checkout --detach "$KERNEL_SOURCE_COMMIT"\n'
+              '  git -C "$KSRC" submodule update --init --recursive'
+          )
+
+          replace_once(
+              "build.sh",
+              "clone_susfs 5\n",
+              'clone_susfs 5\n'
+              'git -C "$SUSFS_DIR" fetch -q origin "$SUSFS_COMMIT"\n'
+              'git -C "$SUSFS_DIR" checkout -q --detach "$SUSFS_COMMIT"\n'
+          )
+
+          replace_once(
+              "build.sh",
+              'bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") -S',
+              'bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/$ANTMAN_COMMIT/antman") "-S=$CLANG_TAG"'
+          )
+
+          replace_once(
+              "build.sh",
+              'git clone "https://github.com/tiann/KernelSU" && echo "[+] Repository cloned."',
+              'git clone "https://github.com/tiann/KernelSU" && '
+              'git -C KernelSU fetch --depth=1 origin "$KSU_COMMIT" && '
+              'git -C KernelSU checkout --detach "$KSU_COMMIT" && '
+              'echo "[+] Pinned KernelSU repository cloned."'
+          )
+
+          replace_once(
+              "build.sh",
+              'https://github.com/WildKernels/kernel_patches/raw/main/',
+              'https://github.com/WildKernels/kernel_patches/raw/$WILDKERNELS_PATCH_COMMIT/'
+          )
+
+          replace_once(
+              "build.sh",
+              'https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh',
+              'https://github.com/vc-teahouse/Baseband-guard/raw/$BASEBAND_GUARD_COMMIT/setup.sh'
+          )
+
+          replace_once(
+              "functions.sh",
+              'git clone --depth=1 https://git.kernel.org/pub/scm/devel/pahole/pahole.git "$pahole_dir"',
+              'git clone --depth=1 --branch v1.32 https://git.kernel.org/pub/scm/devel/pahole/pahole.git "$pahole_dir"'
+          )
+
+          replace_once(
+              "build.sh",
+              'set +eo pipefail\n\ncd $WORKDIR\n\nlog "Cloning anykernel from $(simplify_gh_url "$ANYKERNEL_REPO")"',
+              'set +eo pipefail\n\n'
+              'cd "$WORKDIR"\n'
+              'BASELINE_DIR="$RELEASE_DIR/r663-baseline"\n'
+              'mkdir -p "$BASELINE_DIR"\n'
+              'test -s "$OUTDIR/.config"\n'
+              'test -s "$OUTDIR/Module.symvers"\n'
+              'grep -q "^CONFIG_MODVERSIONS=y$" "$OUTDIR/.config"\n'
+              'cp "$OUTDIR/.config" "$BASELINE_DIR/kernel.config"\n'
+              'cp "$OUTDIR/Module.symvers" "$BASELINE_DIR/Module.symvers"\n'
+              'cp "$OUTDIR/System.map" "$BASELINE_DIR/System.map"\n'
+              'cp "$OUTDIR/include/generated/autoconf.h" "$BASELINE_DIR/autoconf.h"\n'
+              'cp "$OUTDIR/include/config/auto.conf" "$BASELINE_DIR/auto.conf"\n'
+              'cp "$OUTDIR/include/config/kernel.release" "$BASELINE_DIR/kernel.release"\n'
+              'cp "$BUILD_LOGS" "$BASELINE_DIR/build.log"\n'
+              'cat > "$BASELINE_DIR/reproduction-metadata.txt" <<EOF\n'
+              'BUILD_REPO_BASE_COMMIT=ef6c99dc6fc10f120cc02c37e721ab959a2fbd9c\n'
+              'KERNEL_SOURCE_REPO=ahmed-alnassif/GKI-Duchamp-6.1\n'
+              'KERNEL_SOURCE_BRANCH=GKID-NH\n'
+              'KERNEL_SOURCE_COMMIT=$KERNEL_SOURCE_COMMIT\n'
+              'KERNEL_RELEASE=$(cat "$OUTDIR/include/config/kernel.release")\n'
+              'KERNELSU_BASE_COMMIT=$KSU_COMMIT\n'
+              'SUSFS_COMMIT=$SUSFS_COMMIT\n'
+              'SUSFS_VERSION=$SUSFS_VERSION\n'
+              'ANTMAN_COMMIT=$ANTMAN_COMMIT\n'
+              'CLANG_TAG=$CLANG_TAG\n'
+              'EXPECTED_CLANG_ARCHIVE_SHA256=$CLANG_ARCHIVE_SHA256\n'
+              'WILDKERNELS_PATCH_COMMIT=$WILDKERNELS_PATCH_COMMIT\n'
+              'BASEBAND_GUARD_COMMIT=$BASEBAND_GUARD_COMMIT\n'
+              'PAHOLE_VERSION=$(pahole --version | head -1)\n'
+              'CONFIG_MODVERSIONS=y\n'
+              'EOF\n'
+              'sha256sum "$BASELINE_DIR/kernel.config" "$BASELINE_DIR/Module.symvers" '
+              '> "$BASELINE_DIR/SHA256SUMS"\n'
+              'echo "Baseline artifacts exported. No AnyKernel ZIP or release will be created."\n'
+              'exit 0\n\n'
+              'log "Cloning anykernel from $(simplify_gh_url "$ANYKERNEL_REPO")"'
+          )
+
+          print("Pinned build script and artifact-only export patch applied.")
+          PY
+
+      - name: Run full r663 baseline build
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build.sh functions.sh
+          ./build.sh
+
+      - name: Upload baseline ABI artifacts only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GKID-r663-baseline-config-and-Module.symvers
+          path: artifacts/r663-baseline/
+          if-no-files-found: error
+          retention-days: 30
