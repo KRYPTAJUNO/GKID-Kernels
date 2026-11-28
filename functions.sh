@@ -31,7 +31,7 @@ declare -A GKI_SUSFS_BRANCH=(
 )
 
 declare -A GKI_SUSFS_COMMIT=(
-#  ["6.1"]="153f88df3be2501d2d33364f8fe05247aecb3cef"
+  ["6.1"]="27e0a0e42745991ba09d6f96a97bf4b83f41a012"
 #  ["6.6"]="3f0b811b2e105afd8dc858cd71389090e01f404b"
 #  ["6.12"]="fb58aef70a9c2aca8f0f85fba14017af94c4e789"
 )
