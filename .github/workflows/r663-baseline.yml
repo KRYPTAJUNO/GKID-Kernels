@@ -212,11 +212,104 @@ jobs:
           chmod +x build.sh functions.sh
           ./build.sh
 
+      - name: Build Candidate A against exact r663 baseline (compile-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKDIR="$GITHUB_WORKSPACE"
+          KSRC="$WORKDIR/ksrc"
+          OUTDIR="$WORKDIR/out"
+          DRIVER_DIR="$WORKDIR/rtl8xxxu-candidate-a"
+          ARTIFACT_DIR="$WORKDIR/artifacts/rtl8xxxu-exact-r663"
+          DRIVER_COMMIT="b6411d673759740b5cf94f150937383dc2efeda6"
+          mkdir -p "$ARTIFACT_DIR"
+
+          test -s "$OUTDIR/.config"
+          test -s "$OUTDIR/Module.symvers"
+          test -s "$ARTIFACT_DIR/../r663-baseline/Module.symvers"
+          cmp "$OUTDIR/Module.symvers" "$ARTIFACT_DIR/../r663-baseline/Module.symvers"
+
+          git clone --no-checkout https://github.com/lwfinger/rtl8xxxu.git "$DRIVER_DIR"
+          git -C "$DRIVER_DIR" checkout --detach "$DRIVER_COMMIT"
+          test "$(git -C "$DRIVER_DIR" rev-parse HEAD)" = "$DRIVER_COMMIT"
+
+          mkdir -p "$WORKDIR/neutron-clang"
+          cd "$WORKDIR/neutron-clang"
+          bash <(curl -fsSL "https://raw.githubusercontent.com/Neutron-Toolchains/antman/$ANTMAN_COMMIT/antman") "-S=$CLANG_TAG"
+          test -x "$WORKDIR/neutron-clang/bin/clang"
+          export PATH="$WORKDIR/neutron-clang/bin:$PATH"
+          export KBUILD_BUILD_USER="GKID"
+          export KBUILD_BUILD_HOST="r663-abi-check"
+          export KCFLAGS="-w"
+
+          make -C "$KSRC" O="$OUTDIR" M="$DRIVER_DIR" \
+            ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC=clang modules 2>&1 | tee "$ARTIFACT_DIR/module-build.log"
+
+          KO="$DRIVER_DIR/rtl8xxxu_git.ko"
+          test -s "$KO"
+          cp "$KO" "$ARTIFACT_DIR/"
+
+          modinfo "$KO" | tee "$ARTIFACT_DIR/module-modinfo.txt"
+          modinfo -F vermagic "$KO" | grep -Fx "$(cat "$OUTDIR/include/config/kernel.release") SMP preempt mod_unload modversions aarch64"
+          modinfo -F depends "$KO" | grep -Eq '(^|,)cfg80211(,|$)'
+          modinfo -F depends "$KO" | grep -Eq '(^|,)mac80211(,|$)'
+          modinfo -F alias "$KO" | grep -Fqi 'v0BDApB711'
+          modinfo -F firmware "$KO" | grep -Fx 'rtlwifi/rtl8710bufw_SMIC.bin'
+          modinfo -F firmware "$KO" | grep -Fx 'rtlwifi/rtl8710bufw_UMC.bin'
+
+          python3 - "$KO" "$OUTDIR/Module.symvers" "$ARTIFACT_DIR/abi-crc-report.txt" <<'PY'
+          import pathlib, re, subprocess, sys
+          ko, symvers, report = map(pathlib.Path, sys.argv[1:])
+          dumped = subprocess.check_output(["modprobe", "--dump-modversions", str(ko)], text=True)
+          imported = {}
+          for line in dumped.splitlines():
+              fields = line.split()
+              if len(fields) != 2:
+                  continue
+              crc, symbol = fields
+              imported[symbol] = int(crc, 0)
+          baseline = {}
+          for line in symvers.read_text().splitlines():
+              fields = line.split()
+              if len(fields) >= 2:
+                  try:
+                      baseline[fields[1]] = int(fields[0], 16)
+                  except ValueError:
+                      pass
+          missing = sorted(set(imported) - set(baseline))
+          mismatches = sorted((name, crc, baseline[name]) for name, crc in imported.items()
+                              if name in baseline and crc != baseline[name])
+          matched = len(imported) - len(missing) - len(mismatches)
+          report.write_text(
+              f"driver_module={ko.name}\nimported_symbols={len(imported)}\n"
+              f"exact_crc_matches={matched}\nmissing_symbols={len(missing)}\n"
+              f"crc_mismatches={len(mismatches)}\n"
+              + ("MISSING: " + ", ".join(missing) + "\n" if missing else "")
+              + ("MISMATCHES: " + ", ".join(f"{n}: module=0x{a:08x}, baseline=0x{b:08x}"
+                                             for n, a, b in mismatches) + "\n" if mismatches else "")
+          )
+          print(report.read_text())
+          if not imported or missing or mismatches:
+              raise SystemExit("ABI CRC verification failed")
+          PY
+
+          mkdir -p "$ARTIFACT_DIR/firmware/rtlwifi"
+          cp "$DRIVER_DIR/firmware/rtl8710bufw_SMIC.bin" "$ARTIFACT_DIR/firmware/rtlwifi/"
+          cp "$DRIVER_DIR/firmware/rtl8710bufw_UMC.bin" "$ARTIFACT_DIR/firmware/rtlwifi/"
+          (cd "$ARTIFACT_DIR/firmware" && sha256sum rtlwifi/*.bin > SHA256SUMS)
+          sha256sum "$ARTIFACT_DIR/rtl8xxxu_git.ko" > "$ARTIFACT_DIR/SHA256SUMS"
+          printf 'driver_commit=%s\nkernel_release=%s\n' "$DRIVER_COMMIT" "$(cat "$OUTDIR/include/config/kernel.release")" > "$ARTIFACT_DIR/build-metadata.txt"
+          echo "Candidate A exact-r663 compile and ABI verification passed. No install or flash performed."
+
       - name: Upload baseline ABI artifacts only
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: GKID-r663-baseline-config-and-Module.symvers
-          path: artifacts/r663-baseline/
+          path: |
+            artifacts/r663-baseline/
+            artifacts/rtl8xxxu-exact-r663/
           if-no-files-found: error
           retention-days: 30
