@@ -1,0 +1,2 @@
+Retry baseline workflow after fixing repeated WildKernels URL replacement.
+This marker only triggers the isolated artifact-only baseline workflow.
