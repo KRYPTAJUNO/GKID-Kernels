@@ -1,6 +1,7 @@
 name: GKID r663 baseline reproduction (artifact only)
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - baseline/r663-reproduction
