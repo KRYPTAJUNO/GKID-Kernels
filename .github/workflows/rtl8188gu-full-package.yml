@@ -270,3 +270,4 @@ jobs:
             artifacts/build.log
           if-no-files-found: error
           retention-days: 14
+# Manual dispatch/push validation checkpoint: rebuild exact r663 ABI and B711 module.
