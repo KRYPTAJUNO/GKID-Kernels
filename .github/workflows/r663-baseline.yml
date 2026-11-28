@@ -62,9 +62,6 @@ jobs:
           python3 -m pip install --break-system-packages lxml
 
       - name: Verify pinned Clang build catalogue checksum
-        env:
-          CLANG_TAG: ${{ env.CLANG_TAG }}
-          CLANG_ARCHIVE_SHA256: ${{ env.CLANG_ARCHIVE_SHA256 }}
         run: |
           python3 - <<'PY'
           import os
@@ -76,7 +73,7 @@ jobs:
           url = f"https://raw.githubusercontent.com/Neutron-Toolchains/clang-build-catalogue/main/{tag}-info.txt"
           with urllib.request.urlopen(url, timeout=30) as response:
               catalogue = response.read().decode("utf-8")
-          match = re.search(r"(?ms)^\\[shasum\\]\\s*([0-9a-fA-F]{64})\\s*$", catalogue)
+          match = re.search(r"(?ms)^\[shasum\]\s*([0-9a-fA-F]{64})\s*$", catalogue)
           if not match:
               raise SystemExit(f"Missing valid [shasum] entry for Clang tag {tag}")
           actual = match.group(1).lower()
