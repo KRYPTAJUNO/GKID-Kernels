@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rtl8188gu-module-only-${{ github.ref }}
+  group: rtl8188gu-module-only-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -218,7 +218,7 @@ jobs:
               elif expected != crc:
                   errors.append(f"{symbol}: module={crc}, kernel={expected}")
           if errors:
-              print("\\n".join(errors))
+              print("\n".join(errors))
               raise SystemExit(f"FAIL: {len(errors)} symbol CRC mismatch(es)")
           print(f"PASS: all {len(imports)} imported symbol CRCs match exact kernel Module.symvers")
           PY
