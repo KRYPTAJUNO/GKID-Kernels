@@ -36,7 +36,7 @@ jobs:
       KSU: KSU
       KSU_COMPAT: "false"
       KSU_SUSFS: "true"
-      C_LTO: "true"
+      C_LTO: "false"
       No_DS: "false"
       TODO: kernel
       TEST: "no"
@@ -50,6 +50,8 @@ jobs:
       RTL8XXXU_IN_TREE: "true"
       RTL8188GU_COMMIT: 9dec8292ae13c3a0dbf53eb07da6585427c8db7a
       EXPECTED_KERNEL_SOURCE: f391d5a36ae325a4f3abdf497335abae87734a05
+      EXPECTED_SUSFS_VERSION: v2.3.0
+      EXPECTED_LLVM_COMMIT: f42c87ba2c70219b1f4ad1f031a5b6a1ea6603fb
       KERNEL_BUILD_JOBS: "2"
       GH_TOKEN: ${{ github.token }}
 
@@ -83,6 +85,11 @@ jobs:
           echo "Actual kernel source:   $ACTUAL_KERNEL_SOURCE"
           test "$ACTUAL_KERNEL_SOURCE" = "$EXPECTED_KERNEL_SOURCE"
           test -s out/arch/arm64/boot/Image
+          test -s ksrc/include/linux/susfs.h
+          grep -Fq "#define SUSFS_VERSION \"$EXPECTED_SUSFS_VERSION\"" ksrc/include/linux/susfs.h
+          export PATH="$GITHUB_WORKSPACE/neutron-clang/bin:$PATH"
+          clang --version | tee artifacts/clang-version.txt
+          grep -Fq "$EXPECTED_LLVM_COMMIT" artifacts/clang-version.txt
           if find artifacts -maxdepth 1 -type f -name '*.zip' -print -quit | grep -q .; then
             echo "Refusing to keep or publish a kernel ZIP in this module-only workflow"
             find artifacts -maxdepth 1 -type f -name '*.zip' -print
@@ -94,6 +101,8 @@ jobs:
           grep -qx 'CONFIG_WLAN_VENDOR_REALTEK=y' out/.config
           grep -qx 'CONFIG_MODULES=y' out/.config
           grep -qx 'CONFIG_MODVERSIONS=y' out/.config
+          grep -qx 'CONFIG_CFI_CLANG=y' out/.config
+          grep -qx 'CONFIG_LTO_CLANG_FULL=y' out/.config
           grep -qx 'CONFIG_CFG80211=m' out/.config
           grep -qx 'CONFIG_MAC80211=m' out/.config
           cp out/.config artifacts/kernel-config-rtl8188gu.txt
@@ -143,6 +152,7 @@ jobs:
           name: GKID-r663-kernel-build-diagnostics
           path: |
             artifacts/build.log
+            artifacts/clang-version.txt
             artifacts/runner-diagnostics.txt
             artifacts/build-log-missing.txt
             artifacts/kernel-config-rtl8188gu.txt
