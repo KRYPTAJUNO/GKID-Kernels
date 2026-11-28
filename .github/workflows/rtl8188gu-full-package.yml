@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - rtl8188gu-full-package
+      - recovery/rtl8188gu-build-diagnostics
     paths:
       - ".github/workflows/rtl8188gu-full-package.yml"
       - "build.sh"
@@ -19,8 +20,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: rtl8188gu-full-package-monitor-injection
-  cancel-in-progress: true
+  group: rtl8188gu-full-package-monitor-injection-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -55,7 +56,7 @@ jobs:
       - name: Checkout isolated full-package branch
         uses: actions/checkout@v4
         with:
-          ref: rtl8188gu-full-package
+          ref: ${{ github.ref }}
           fetch-depth: 1
 
       - name: Install build dependencies
@@ -68,6 +69,7 @@ jobs:
           timeout 5m python3 -m pip install lxml
 
       - name: Build complete GKID KernelSU + SuSFS + Multiple Managers kernel ZIP
+        id: kernel_build
         shell: bash
         run: |
           set -euo pipefail
@@ -103,14 +105,49 @@ jobs:
           echo "AnyKernel3 package:" >> artifacts/kernel-metadata-rtl8188gu.txt
           find artifacts -maxdepth 1 -type f -name '*.zip' -printf '%f %s bytes\n' >> artifacts/kernel-metadata-rtl8188gu.txt
 
-      - name: Upload kernel-build diagnostics on failure
-        if: failure()
+      - name: Capture kernel-build diagnostics
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          mkdir -p artifacts
+          {
+            echo "Build step outcome: ${{ steps.kernel_build.outcome }}"
+            echo "Workflow ref: $GITHUB_REF"
+            echo "Commit: $GITHUB_SHA"
+            echo "Timestamp UTC: $(date -u +%FT%TZ)"
+            echo
+            echo "=== Disk ==="
+            df -h
+            echo
+            echo "=== Memory ==="
+            free -h
+            echo
+            echo "=== CPU ==="
+            getconf _NPROCESSORS_ONLN
+            echo
+            echo "=== Workspace usage ==="
+            du -sh "$GITHUB_WORKSPACE"/* 2>/dev/null | sort -h | tail -30
+            echo
+            echo "=== Relevant files ==="
+            find artifacts out -maxdepth 3 -type f \( -name 'build.log' -o -name '.config' -o -name 'Module.symvers' -o -name 'Image' \) -printf '%p %s bytes\\n' 2>/dev/null
+          } > artifacts/runner-diagnostics.txt
+          test -s artifacts/build.log || echo "build.log was not created" > artifacts/build-log-missing.txt
+          if [ -f out/.config ]; then cp out/.config artifacts/kernel-config-rtl8188gu.txt; fi
+          if [ -f out/Module.symvers ]; then cp out/Module.symvers artifacts/Module.symvers; fi
+          exit 0
+
+      - name: Upload kernel-build diagnostics
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: GKID-r663-kernel-build-failure-diagnostics
+          name: GKID-r663-kernel-build-diagnostics
           path: |
             artifacts/build.log
+            artifacts/runner-diagnostics.txt
+            artifacts/build-log-missing.txt
             artifacts/kernel-config-rtl8188gu.txt
+            artifacts/Module.symvers
             artifacts/kernel-metadata-rtl8188gu.txt
           if-no-files-found: warn
           retention-days: 14
