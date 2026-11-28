@@ -129,7 +129,9 @@ jobs:
               'git clone "https://github.com/tiann/KernelSU" && '
               'git -C KernelSU fetch --depth=1 origin "$KSU_COMMIT" && '
               'git -C KernelSU checkout --detach "$KSU_COMMIT" && '
-              'echo "[+] Pinned KernelSU repository cloned."'
+              'git -C KernelSU fetch --deepen=1 origin "$KSU_COMMIT" && '
+              'git -C KernelSU rev-parse --verify HEAD^ >/dev/null && '
+              'echo "[+] Pinned KernelSU repository cloned with parent history."'
           )
 
           def replace_all(path, old, new):
